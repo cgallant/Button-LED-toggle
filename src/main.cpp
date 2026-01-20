@@ -69,7 +69,23 @@ void setup() {
   }
   tlc.write();
   Serial0.println("TLC5947 ready - LEDs off");
-
+Serial0.println("Startup flash...");
+  for (int flash = 0; flash < 6; flash++) {
+    // All LEDs ON
+    for (int i = 0; i < 96; i++) {
+      tlc.setPWM(i, 4095);
+    }
+    tlc.write();
+    delay(250);
+    
+    // All LEDs OFF
+    for (int i = 0; i < 96; i++) {
+      tlc.setPWM(i, 0);
+    }
+    tlc.write();
+    delay(250);
+  }
+  Serial0.println("Ready!");
   Serial0.println("Press buttons to toggle LEDs!");
 }
 

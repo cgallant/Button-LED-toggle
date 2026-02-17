@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_MCP23X17.h>
 #include <Adafruit_TLC5947.h>
+#include <Adafruit_NeoPixel.h>
 
 // I2C pin configuration for ESP32
 const int SDA_PIN = 8;
@@ -13,6 +14,11 @@ const int TLC_LAT = 15;  // Latch pin - loads data into output registers
 const int TLC_OE = 16;   // Output Enable pin - enables/disables LED outputs
 const int TLC_CLK = 18;  // Clock pin - synchronizes data transfer
 const int TLC_DIN = 39;  // Data input pin - receives PWM data
+
+// NeoPixel configuration
+const int NEOPIXEL_PIN = 5;     // GPIO pin for NeoPixel data
+const int NEOPIXEL_COUNT = 7;   // Number of pixels in the jewel (7 is standard jewel size)
+Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 // System configuration - 8 MCP23017 chips, each with 16 buttons/LEDs
 const int NUM_PAIRS = 8;
@@ -39,6 +45,21 @@ int pinToChannel(int pair, int pin) {
     // GPA pins (0-7) map to TLC channels 8-15 relative to base
     return base + 8 + pin;
   }
+}
+
+// Rainbow color wheel function for smooth color transitions
+// Input a value 0 to 255 to get a color value
+uint32_t wheelColor(byte wheelPos) {
+  wheelPos = 255 - wheelPos;
+  if (wheelPos < 85) {
+    return pixels.Color(255 - wheelPos * 3, 0, wheelPos * 3);
+  }
+  if (wheelPos < 170) {
+    wheelPos -= 85;
+    return pixels.Color(0, wheelPos * 3, 255 - wheelPos * 3);
+  }
+  wheelPos -= 170;
+  return pixels.Color(wheelPos * 3, 255 - wheelPos * 3, 0);
 }
 
 void setup() {
@@ -84,29 +105,73 @@ void setup() {
   tlc.write();  // Write data to TLC chips
   Serial0.println("TLC5947 ready - LEDs off");
 
-  // Perform startup flash sequence to verify all LEDs are working
+  // Initialize NeoPixel with Adafruit library (3.3V compatible)
+  pixels.begin();
+  pixels.setBrightness(50);  // Set brightness (0-255)
+  Serial0.println("NeoPixel ready - Rainbow cycling (Adafruit_NeoPixel @ 3.3V)");
+
+  // Turn on all LEDs initially for a few seconds
+  Serial0.println("All LEDs ON for startup...");
+  for (int i = 0; i < 192; i++) {
+    tlc.setPWM(i, 4095);  // Full brightness
+  }
+  tlc.write();
+  delay(3000);  // Keep all LEDs on for 3 seconds
+
+  // Turn off all LEDs before starting flash sequence
+  for (int i = 0; i < 192; i++) {
+    tlc.setPWM(i, 0);
+  }
+  tlc.write();
+  delay(500);
+
+  // Perform startup flash sequence with rainbow cycling on NeoPixel
   Serial0.println("Startup flash...");
   for (int flash = 0; flash < 6; flash++) {
     Serial0.print("Flash ");
     Serial0.print(flash + 1);
     Serial0.println(" ON");
-    // All LEDs ON at full brightness
+    // All TLC LEDs ON at full brightness
     for (int i = 0; i < 192; i++) {
       tlc.setPWM(i, 4095);  // 4095 = max brightness (12-bit PWM)
     }
     tlc.write();
-    delay(500);  // Increased delay for long chain
+
+    // Cycle through rainbow colors during ON phase
+    for (int j = 0; j < 50; j++) {  // 50 steps over 500ms
+      uint32_t color = wheelColor((flash * 42 + j * 5) & 255);  // Different starting color each flash
+      for (int i = 0; i < NEOPIXEL_COUNT; i++) {
+        pixels.setPixelColor(i, color);
+      }
+      pixels.show();
+      delay(10);
+    }
 
     Serial0.print("Flash ");
     Serial0.print(flash + 1);
     Serial0.println(" OFF");
-    // All LEDs OFF
+    // All TLC LEDs OFF
     for (int i = 0; i < 192; i++) {
       tlc.setPWM(i, 0);
     }
     tlc.write();
-    delay(500);  // Increased delay for long chain
+
+    // Continue rainbow cycling during OFF phase
+    for (int j = 50; j < 100; j++) {  // Another 50 steps over 500ms
+      uint32_t color = wheelColor((flash * 42 + j * 5) & 255);
+      for (int i = 0; i < NEOPIXEL_COUNT; i++) {
+        pixels.setPixelColor(i, color);
+      }
+      pixels.show();
+      delay(10);
+    }
   }
+
+  // Turn off NeoPixel after flash sequence
+  pixels.clear();
+  pixels.show();
+  Serial0.println("NeoPixel off");
+
   Serial0.println("Ready!");
   Serial0.println("Press buttons to toggle LEDs!");
 }

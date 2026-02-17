@@ -14,14 +14,14 @@ const int TLC_OE = 16;   // Output Enable pin - enables/disables LED outputs
 const int TLC_CLK = 18;  // Clock pin - synchronizes data transfer
 const int TLC_DIN = 39;  // Data input pin - receives PWM data
 
-// System configuration - 4 MCP23017 chips, each with 16 buttons/LEDs
-const int NUM_PAIRS = 4;
-const uint8_t MCP_ADDRESSES[NUM_PAIRS] = {0x20, 0x21, 0x22, 0x23}; // I2C addresses for each MCP23017
-const int TLC_BASE_CHANNEL[NUM_PAIRS] = {0, 24, 48, 72};          // Starting TLC channel for each MCP (24 channels per chip)
+// System configuration - 8 MCP23017 chips, each with 16 buttons/LEDs
+const int NUM_PAIRS = 8;
+const uint8_t MCP_ADDRESSES[NUM_PAIRS] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27}; // I2C addresses for each MCP23017
+const int TLC_BASE_CHANNEL[NUM_PAIRS] = {0, 24, 48, 72, 96, 120, 144, 168};                // Starting TLC channel for each MCP (24 channels per chip)
 
 // Initialize hardware objects
 Adafruit_MCP23X17 mcp[NUM_PAIRS];                    // Array of MCP23017 I/O expanders (button inputs)
-Adafruit_TLC5947 tlc(4, TLC_CLK, TLC_DIN, TLC_LAT);  // TLC5947 LED driver (4 chips daisy-chained = 96 channels)
+Adafruit_TLC5947 tlc(8, TLC_CLK, TLC_DIN, TLC_LAT);  // TLC5947 LED driver (8 chips daisy-chained = 192 channels)
 
 // State tracking arrays
 bool ledState[NUM_PAIRS][16] = {false};         // Current on/off state for each LED
@@ -48,8 +48,8 @@ void setup() {
   while (!Serial0) {
     delay(10);  // Wait for serial connection
   }
-  delay(2000);
-  Serial0.println("=== 4-Pair Button-LED Toggle ===");
+  delay(5000);
+  Serial0.println("=== 8-Pair Button-LED Toggle ===");
 
   // Initialize I2C bus with custom pins
   Wire.begin(SDA_PIN, SCL_PIN);
@@ -77,8 +77,8 @@ void setup() {
   pinMode(TLC_OE, OUTPUT);
   digitalWrite(TLC_OE, LOW);  // Enable outputs (active LOW)
   tlc.begin();
-  // Turn off all 96 LED channels (4 TLC5947 chips × 24 channels each)
-  for (int i = 0; i < 96; i++) {
+  // Turn off all 192 LED channels (8 TLC5947 chips × 24 channels each)
+  for (int i = 0; i < 192; i++) {
     tlc.setPWM(i, 0);  // Set PWM to 0 (off)
   }
   tlc.write();  // Write data to TLC chips
@@ -87,25 +87,45 @@ void setup() {
   // Perform startup flash sequence to verify all LEDs are working
   Serial0.println("Startup flash...");
   for (int flash = 0; flash < 6; flash++) {
+    Serial0.print("Flash ");
+    Serial0.print(flash + 1);
+    Serial0.println(" ON");
     // All LEDs ON at full brightness
-    for (int i = 0; i < 96; i++) {
+    for (int i = 0; i < 192; i++) {
       tlc.setPWM(i, 4095);  // 4095 = max brightness (12-bit PWM)
     }
     tlc.write();
-    delay(250);
+    delay(500);  // Increased delay for long chain
 
+    Serial0.print("Flash ");
+    Serial0.print(flash + 1);
+    Serial0.println(" OFF");
     // All LEDs OFF
-    for (int i = 0; i < 96; i++) {
+    for (int i = 0; i < 192; i++) {
       tlc.setPWM(i, 0);
     }
     tlc.write();
-    delay(250);
+    delay(500);  // Increased delay for long chain
   }
   Serial0.println("Ready!");
   Serial0.println("Press buttons to toggle LEDs!");
 }
 
 void loop() {
+  // Debug: Type a channel number in serial monitor to test that LED
+  if (Serial0.available()) {
+    int testChannel = Serial0.parseInt();
+    if (testChannel >= 0 && testChannel < 192) {
+      Serial0.print("Testing channel ");
+      Serial0.println(testChannel);
+      tlc.setPWM(testChannel, 4095);  // Full brightness
+      tlc.write();
+      delay(2000);  // Keep on for 2 seconds
+      tlc.setPWM(testChannel, 0);  // Turn off
+      tlc.write();
+    }
+  }
+
   // Scan all MCP23017 chips for button presses
   for (int pair = 0; pair < NUM_PAIRS; pair++) {
     if (!mcpFound[pair]) continue;  // Skip this MCP if it wasn't detected
